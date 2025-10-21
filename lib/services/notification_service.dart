@@ -11,7 +11,7 @@ class NotificationService {
     // Settings for Android
     AndroidInitializationSettings initializationSettingsAndroid =
         const AndroidInitializationSettings(
-          'app_icon',
+          'notification_icon',
         ); // MUST match your icon file name
 
     // Settings for iOS
