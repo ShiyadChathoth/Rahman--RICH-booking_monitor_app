@@ -6,7 +6,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    // Apply the Google Services plugin (ensure version is defined in project-level build.gradle.kts)
+    // Apply the Google Services plugin
     id("com.google.gms.google-services")
 }
 
@@ -14,7 +14,6 @@ plugins {
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
-    // Correct way to read the properties file
     localPropertiesFile.inputStream().use { stream ->
         localProperties.load(stream)
     }
@@ -26,8 +25,7 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 
 android {
-    namespace = "com.example.booking_monitor_app" // Matches manifest
-    // Ensure compileSdk matches Flutter's requirements (often fetched via flutter object)
+    namespace = "com.example.booking_monitor_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -43,39 +41,29 @@ android {
         jvmTarget = "11"
     }
 
-    // Signing Configurations block should be directly inside 'android'
     signingConfigs {
-        // Define debug signing config
-         getByName("debug") { // Use getByName("debug") for the default one
+         getByName("debug") {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
             storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
             storePassword = "android"
         }
-        // You would add release signing configs here for production builds
-        // create("release") { ... }
     }
 
     defaultConfig {
         applicationId = "com.example.booking_monitor_app"
-        // Use minSdk from Flutter config or set explicitly (e.g., 21)
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInt()
         versionName = flutterVersionName
-        multiDexEnabled = true // Keep multidex enabled
+        multiDexEnabled = true
     }
 
     buildTypes {
         release {
-            // Point release builds to use the debug signing config unless you create a specific 'release' config above
             signingConfig = signingConfigs.getByName("debug")
-            // Add other release settings like ProGuard/R8 if needed
-            // isMinifyEnabled = true
-            // proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
          debug {
-             // Debug builds usually use the default debug signing config automatically
              signingConfig = signingConfigs.getByName("debug")
          }
     }
@@ -86,17 +74,12 @@ flutter {
 }
 
 dependencies {
-    // Import the Firebase BoM (Bill of Materials) - Use the latest compatible version
-    implementation(platform("com.google.firebase:firebase-bom:33.1.1")) // Check for latest
-
-    // Add dependencies for Firebase products you want to use
-    // Analytics is often recommended
+    // --- Firebase BoM and Dependencies ---
+    implementation(platform("com.google.firebase:firebase-bom:33.1.1")) // Check for latest BoM version
     implementation("com.google.firebase:firebase-analytics")
-    // Cloud Messaging dependency
     implementation("com.google.firebase:firebase-messaging")
-    // Add other Firebase dependencies here WITHOUT version numbers (BoM manages them)
+    // --- End Firebase ---
 
     // Core library desugaring dependency
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4") // Keep this version or check for updates if needed
-
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
