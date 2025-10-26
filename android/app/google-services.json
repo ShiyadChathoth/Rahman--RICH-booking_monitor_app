@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "916440860862",
+    "project_id": "rich--assistant",
+    "storage_bucket": "rich--assistant.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:916440860862:android:ac72cdce71fabcad6f76ef",
+        "android_client_info": {
+          "package_name": "com.example.booking_monitor_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "916440860862-b51tfdq7i6gdf0m0n4j7g2t8r3qqnnar.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZPmlpVST_bCPv8MxiM4H73Ecoh27ILeo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "916440860862-b51tfdq7i6gdf0m0n4j7g2t8r3qqnnar.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

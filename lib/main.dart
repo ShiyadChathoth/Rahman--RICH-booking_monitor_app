@@ -1,18 +1,178 @@
-// lib/main.dart - UPDATED CODE
+// lib/main.dart - CORRECTED CODE
 
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+
+// --- FCM/Firebase Imports ---
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+// Ensure firebase_options.dart exists after running `flutterfire configure`
+import 'firebase_options.dart';
+// --- End FCM Imports ---
 
 import 'services/notification_service.dart';
 import 'models/booking.dart';
 import 'screens/booking_detail_screen.dart';
 
-void main() {
+// Define the server URL (ensure it's accessible)
+final String _serverUrl = "https://pi-monitor.tailb72c55.ts.net";
+
+// --- FCM: Background Message Handler ---
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // If you need to initialize anything here, ensure plugins are ready.
+  // Example: await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  print("Handling a background message: ${message.messageId}");
+  print('Message data: ${message.data}');
+
+  if (message.notification != null) {
+    print('Message also contained a notification: ${message.notification}');
+    NotificationService notificationService = NotificationService();
+    // Ensure initNotification doesn't rely on BuildContext here
+    await notificationService.initNotification();
+    notificationService.showNotification(
+      message.hashCode,
+      message.notification?.title ?? 'New Message',
+      message.notification?.body ?? '',
+    );
+  }
+}
+// --- End FCM ---
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // --- FCM: Initialize Firebase ---
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform, // Use generated options
+  );
+  print("Firebase Initialized");
+
+  // --- FCM: Set Background Handler ---
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // --- FCM: Request Permissions (Needed for Android 13+) ---
+  await _requestNotificationPermissions();
+
+  // --- FCM: Setup Message Handlers & Token Logic ---
+  await _setupFcm();
+  // --- End FCM ---
+
   runApp(const BookingMonitorApp());
 }
+
+// --- FCM: Helper function to request permissions ---
+Future<void> _requestNotificationPermissions() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    announcement: false,
+    badge: true,
+    carPlay: false,
+    criticalAlert: false,
+    provisional: false,
+    sound: true,
+  );
+
+  if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+    print('User granted notification permission');
+  } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+    print('User granted provisional notification permission');
+  } else {
+    print('User declined or has not accepted notification permission');
+  }
+}
+// --- End FCM ---
+
+// --- FCM: Function to set up listeners and handle token ---
+Future<void> _setupFcm() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+  // 1. Get initial token and send to server
+  String? fcmToken = await messaging.getToken();
+  if (fcmToken != null) {
+    print("Initial FCM Token: $fcmToken");
+    await registerDeviceToken(fcmToken);
+  } else {
+    print("Failed to get initial FCM token.");
+  }
+
+  // 2. Listen for token refreshes and send updates to server
+  messaging.onTokenRefresh
+      .listen((newToken) async {
+        print("FCM Token Refreshed: $newToken");
+        await registerDeviceToken(newToken);
+      })
+      .onError((err) {
+        print("Error listening for token refresh: $err");
+      });
+
+  // 3. Handle foreground messages (app is open)
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print('Foreground message received:');
+    print('Message data: ${message.data}');
+
+    if (message.notification != null) {
+      print('Message contained a notification: ${message.notification}');
+      NotificationService notificationService = NotificationService();
+      notificationService.initNotification().then((_) {
+        notificationService.showNotification(
+          message.hashCode,
+          message.notification?.title ?? 'Notification',
+          message.notification?.body ?? '',
+        );
+      });
+    }
+  });
+
+  // 4. Handle notification tap when app is terminated/background
+  FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+    if (message != null) {
+      print(
+        "App opened via terminated state notification: ${message.messageId}",
+      );
+      // TODO: Handle navigation based on message.data if needed
+    }
+  });
+
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    print('App opened via background state notification: ${message.messageId}');
+    // TODO: Handle navigation based on message.data if needed
+  });
+}
+// --- End FCM ---
+
+// --- FCM: Function to send the token to your server ---
+Future<void> registerDeviceToken(String token) async {
+  final url = Uri.parse('$_serverUrl/register-device');
+  print("Sending token to server: $token");
+  try {
+    final response = await http
+        .post(
+          url,
+          headers: <String, String>{
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: jsonEncode(<String, String>{'token': token}),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      print('Token registered successfully with server.');
+    } else {
+      print(
+        'Failed to register token. Server responded with status: ${response.statusCode}',
+      );
+      print('Response body: ${response.body}');
+    }
+  } catch (e) {
+    print('Error sending token to server: $e');
+  }
+}
+// --- End FCM ---
 
 class BookingMonitorApp extends StatelessWidget {
   const BookingMonitorApp({super.key});
@@ -44,101 +204,77 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final String _serverUrl = "https://pi-monitor.tailb72c55.ts.net";
-
   late final NotificationService notificationService;
   List<Booking> _bookings = [];
   bool _isLoading = true;
   String _errorMessage = '';
-  int? _lastKnownBookingId;
-  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     notificationService = NotificationService();
-    _initializeServices();
+    _initializeServicesAndLoadData();
   }
 
-  void _initializeServices() async {
+  void _initializeServicesAndLoadData() async {
     await notificationService.initNotification();
-    await _fetchBookings();
-    _startPolling();
-  }
-
-  @override
-  void dispose() {
-    _pollingTimer?.cancel();
-    super.dispose();
+    await _fetchBookings(); // CORRECTED TYPO HERE
   }
 
   Future<void> _fetchBookings() async {
-    // Show loading indicator when fetching (optional, but good for UX)
-    if (_bookings.isEmpty) {
-      setState(() => _isLoading = true);
-    }
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
 
     try {
       final response = await http
           .get(Uri.parse('$_serverUrl/bookings'))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
+
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['success'] == true) {
+        if (data['success'] == true && data['bookings'] is List) {
           final List<Booking> fetchedBookings = (data['bookings'] as List)
               .map((json) => Booking.fromJson(json))
               .toList();
 
-          // Check for new booking notification BEFORE updating _bookings
-          if (fetchedBookings.isNotEmpty) {
-            int newLatestId = fetchedBookings.first.id;
-            if (_lastKnownBookingId != null &&
-                newLatestId > _lastKnownBookingId!) {
-              final newBooking = fetchedBookings.first;
-              notificationService.showNotification(
-                newLatestId,
-                "New Booking Received!",
-                "From: ${newBooking.organization}",
-              );
-            }
-            _lastKnownBookingId = newLatestId;
-          }
-
           setState(() {
             _bookings = fetchedBookings;
             _isLoading = false;
-            _errorMessage = '';
+          });
+        } else {
+          setState(() {
+            _errorMessage =
+                'API Error: ${data['message'] ?? 'Failed to load data.'}';
+            _isLoading = false;
+            _bookings = [];
           });
         }
       } else {
         setState(() {
           _errorMessage = 'Server Error: ${response.statusCode}';
           _isLoading = false;
+          _bookings = [];
         });
       }
     } catch (e) {
       if (!mounted) return;
-      print('Connection Error: $e');
+      print('Connection Error fetching bookings: $e');
       setState(() {
         _errorMessage =
-            'Failed to connect to the server. Make sure the server is running and the URL is correct.\nError: $e';
+            'Network Error: Could not connect to the server.\nPlease check your connection.';
         _isLoading = false;
+        _bookings = [];
       });
     }
   }
 
-  void _startPolling() {
-    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      print("Polling for new bookings...");
-      _fetchBookings();
-    });
-  }
-
-  // Callback function to refresh bookings after a deletion
   void _onBookingDeletedCallback() {
-    _fetchBookings(); // Simply re-fetch all bookings
+    _fetchBookings();
   }
 
   @override
@@ -150,18 +286,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading && _bookings.isEmpty) {
-      // Only show full loading if no data yet
+    if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_errorMessage.isNotEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Text(
-            _errorMessage,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.red, fontSize: 16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _errorMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red, fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _fetchBookings,
+                child: const Text("Retry"),
+              ),
+            ],
           ),
         ),
       );
@@ -186,10 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: _bookings.length,
         itemBuilder: (context, index) {
           final booking = _bookings[index];
-          // Format program date for subtitle if it exists
           final String subtitleProgramDate = booking.programDate != null
-              ? ' | Pgm: ${DateFormat.yMd().format(booking.programDate!)}' // Short date format '10/26/2025'
-              : ''; // Empty string if no program date
+              ? ' | Pgm: ${DateFormat.yMd().format(booking.programDate!)}'
+              : '';
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -204,8 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(
                     builder: (context) => BookingDetailScreen(
                       booking: booking,
-                      onBookingDeleted:
-                          _onBookingDeletedCallback, // Pass the callback
+                      onBookingDeleted: _onBookingDeletedCallback,
                     ),
                   ),
                 );
@@ -222,16 +365,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+              // --- FIX Text Widgets ---
               title: Text(
                 booking.organization,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                // Updated Subtitle:
                 'Contact: ${booking.contactPerson}\n'
-                'Received: ${DateFormat.yMd().add_jm().format(booking.createdAt)}$subtitleProgramDate', // Added program date
+                'Received: ${DateFormat.yMd().add_jm().format(booking.createdAt)}$subtitleProgramDate',
               ),
-              isThreeLine: true, // Keep true if subtitle might wrap to 3 lines
+              // --- End FIX ---
+              isThreeLine: true,
             ),
           );
         },

@@ -30,7 +30,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.1                  # For making API requests to your server
+  http: ^1.5.0                  # For making API requests to your server
   flutter_local_notifications: ^17.1.2 # For showing local notifications
   intl: ^0.19.0                   # For formatting dates nicely
   url_launcher: ^6.3.0 # <-- ADD THIS LINE
@@ -38,6 +38,8 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flutter_launcher_icons: "^0.13.1" # <--- ADD THIS LINE
+  firebase_core: ^4.2.0
+  firebase_messaging: ^16.0.3
 
 flutter_launcher_icons: # <--- ADD THIS ENTIRE BLOCK
   android: true

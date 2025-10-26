@@ -9,12 +9,13 @@ class NotificationService {
   // Initializes the notification plugin
   Future<void> initNotification() async {
     // Settings for Android
+    // Use the icon name (without extension) from the drawable folder
     AndroidInitializationSettings initializationSettingsAndroid =
         const AndroidInitializationSettings(
-          'notification_icon',
-        ); // MUST match your icon file name
+          'notification_icon', // MUST match your icon file name
+        );
 
-    // Settings for iOS
+    // Settings for iOS (can be kept or removed if only targeting Android)
     var initializationSettingsIOS = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -25,7 +26,8 @@ class NotificationService {
 
     var initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
+      iOS:
+          initializationSettingsIOS, // Keep or remove based on target platforms
     );
 
     await notificationsPlugin.initialize(
@@ -45,13 +47,15 @@ class NotificationService {
         // Notification details for Android
         android: AndroidNotificationDetails(
           'main_channel', // A unique ID for the channel
-          'Main Channel',
-          channelDescription: "Main channel for booking notifications",
+          'Main Channel', // Channel name visible in Android settings
+          channelDescription:
+              "Main channel for booking notifications", // Channel description
           importance: Importance.max, // Ensures the notification pops up
-          priority: Priority.high,
-          icon: 'app_icon', // MUST match your icon file name
+          priority: Priority.high, // High priority
+          // Ensure this icon name matches the file in android/app/src/main/res/drawable
+          icon: 'notification_icon', // Use the same icon name here
         ),
-        // Notification details for iOS
+        // Notification details for iOS (can be kept or removed)
         iOS: DarwinNotificationDetails(
           sound: 'default.wav',
           presentAlert: true,
