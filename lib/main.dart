@@ -44,7 +44,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final String _serverUrl = "http://pi-monitor.tailb72c55.ts.net:4000";
+  final String _serverUrl = "https://pi-monitor.tailb72c55.ts.net";
 
   late final NotificationService notificationService;
   List<Booking> _bookings = [];
@@ -186,6 +186,10 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: _bookings.length,
         itemBuilder: (context, index) {
           final booking = _bookings[index];
+          // Format program date for subtitle if it exists
+          final String subtitleProgramDate = booking.programDate != null
+              ? ' | Pgm: ${DateFormat.yMd().format(booking.programDate!)}' // Short date format '10/26/2025'
+              : ''; // Empty string if no program date
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -223,11 +227,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
+                // Updated Subtitle:
                 'Contact: ${booking.contactPerson}\n'
-                'Service: ${booking.serviceRequired}\n'
-                'Received: ${DateFormat.yMMMd().add_jm().format(booking.createdAt)}',
+                'Received: ${DateFormat.yMd().add_jm().format(booking.createdAt)}$subtitleProgramDate', // Added program date
               ),
-              isThreeLine: true,
+              isThreeLine: true, // Keep true if subtitle might wrap to 3 lines
             ),
           );
         },
