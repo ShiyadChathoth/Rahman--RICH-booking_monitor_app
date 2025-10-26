@@ -44,7 +44,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final String _serverUrl = "http://pi-monitor.tailb72c55.ts.net:4000";
+  final String _serverUrl = "https://pi-monitor.tailb72c55.ts.net";
 
   late final NotificationService notificationService;
   List<Booking> _bookings = [];

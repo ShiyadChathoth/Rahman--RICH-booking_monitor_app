@@ -1,10 +1,10 @@
-// lib/screens/booking_detail_screen.dart - CORRECTED CODE
+// lib/screens/booking_detail_screen.dart - ADDED LOGGING
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert'; // <-- ADD THIS LINE for json.decode
+import 'dart:convert'; // For json.decode
 import '../models/booking.dart';
 
 class BookingDetailScreen extends StatelessWidget {
@@ -17,18 +17,26 @@ class BookingDetailScreen extends StatelessWidget {
     required this.onBookingDeleted,
   });
 
-  // IMPORTANT: Replace with your server's actual IP address or domain
-  final String _serverUrl = "http://pi-monitor.tailb72c55.ts.net:4000";
+  // --- Ensure this is the CORRECT public HTTPS URL ---
+  final String _serverUrl = "https://pi-monitor.tailb72c55.ts.net";
+  // --------------------------------------------------
 
   Future<void> _makeCall(BuildContext context, String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not make a call to $phoneNumber')),
-      );
-      print('Could not launch $launchUri');
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch dialler for $phoneNumber')),
+        );
+        print('Could not launch $launchUri');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error trying to make call: $e')));
+      print('Error launching call URL: $e');
     }
   }
 
@@ -36,29 +44,38 @@ class BookingDetailScreen extends StatelessWidget {
     BuildContext context,
     String whatsappNumber,
   ) async {
-    final String formattedNumber = whatsappNumber.startsWith('+')
-        ? whatsappNumber
-        : '+91$whatsappNumber';
-
-    final Uri launchUri = Uri.parse("https://wa.me/$formattedNumber");
-
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri, mode: LaunchMode.externalApplication);
-    } else {
+    // Clean and format number
+    String cleanedNumber = whatsappNumber.replaceAll(RegExp(r'\s+|-'), '');
+    if (cleanedNumber.startsWith('0')) {
+      cleanedNumber = '+91${cleanedNumber.substring(1)}';
+    } else if (!cleanedNumber.startsWith('+')) {
+      cleanedNumber = '+91$cleanedNumber';
+    }
+    final Uri launchUri = Uri.parse("https://wa.me/$cleanedNumber");
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open WhatsApp chat with $cleanedNumber'),
+          ),
+        );
+        print('Could not launch $launchUri');
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open WhatsApp chat with $whatsappNumber'),
-        ),
+        SnackBar(content: Text('Error trying to open WhatsApp: $e')),
       );
-      print('Could not launch $launchUri');
+      print('Error launching WhatsApp URL: $e');
     }
   }
 
-  // --- NEW: Function to delete booking ---
+  // --- Function to delete booking ---
   Future<void> _deleteBooking(BuildContext context) async {
-    // Show a confirmation dialog
+    // Show confirmation dialog
     bool confirm =
-        await showDialog(
+        await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text("Confirm Deletion"),
@@ -73,58 +90,104 @@ class BookingDetailScreen extends StatelessWidget {
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text("Delete"),
+                child: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           ),
         ) ??
         false;
 
-    if (!confirm) {
+    if (!confirm || !context.mounted) {
       return;
     }
 
+    // --- ADDED LOGGING: Print the URL before making the request ---
+    final deleteUrl = '$_serverUrl/booking/${booking.id}';
+    print("--- Attempting DELETE Request ---");
+    print("URL: $deleteUrl");
+    // -------------------------------------------------------------
+
     try {
-      final response = await http.delete(
-        Uri.parse('$_serverUrl/booking/${booking.id}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-      );
+      final response = await http
+          .delete(
+            Uri.parse(deleteUrl),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+              // Add any other necessary headers here (like Authorization if needed)
+            },
+          )
+          .timeout(const Duration(seconds: 20)); // Increased timeout slightly
+
+      if (!context.mounted) return;
 
       if (response.statusCode == 200) {
+        print("--- DELETE Success (Status 200) ---");
+        print("Response Body: ${response.body}");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Booking from ${booking.organization} deleted successfully!',
             ),
+            backgroundColor: Colors.green,
           ),
         );
         onBookingDeleted();
         Navigator.of(context).pop();
       } else {
-        final errorData = json.decode(
-          response.body,
-        ); // json.decode is now defined
+        // --- ADDED LOGGING: Print status code and raw body on non-200 response ---
+        print("--- DELETE Failed (Status ${response.statusCode}) ---");
+        print("Raw Response Body:\n${response.body}");
+        // -----------------------------------------------------------------------
+
+        // Try to decode error, provide fallback message
+        String errorMessage = 'Failed to delete booking.';
+        try {
+          final errorData = json.decode(
+            response.body,
+          ); // This might fail if body is HTML
+          errorMessage +=
+              ' Server said: ${errorData['message'] ?? 'Unknown error'} (Code: ${response.statusCode})';
+        } catch (e) {
+          // --- ADDED LOGGING: Indicate JSON decoding failed ---
+          print("Failed to decode JSON response: $e");
+          // -------------------------------------------------
+          errorMessage +=
+              ' Status code: ${response.statusCode}. Received non-JSON response (possibly HTML error page).';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Failed to delete booking: ${errorData['message'] ?? response.statusCode}',
-            ),
+            content: Text(errorMessage),
+            backgroundColor: Colors.redAccent,
           ),
         );
-        print('API Error: ${response.statusCode} - ${response.body}');
+        print('API Error Logged. Status: ${response.statusCode}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Catch stack trace as well
+      if (!context.mounted) return;
+      // --- ADDED LOGGING: Print error and stack trace on exception ---
+      print("--- DELETE Network/Exception Error ---");
+      print("Error: $e");
+      print("StackTrace:\n$stackTrace");
+      // -----------------------------------------------------------
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Network error: Could not delete booking. $e')),
+        SnackBar(
+          content: Text(
+            'Network error or exception: Could not delete booking. Error: $e',
+          ),
+          backgroundColor: Colors.orangeAccent,
+        ),
       );
-      print('Network Error: $e');
+      print('Network Error/Exception during DELETE logged.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // ... (rest of the build method remains the same) ...
     return Scaffold(
       appBar: AppBar(
         title: const Text("Booking Details"),
@@ -174,12 +237,13 @@ class BookingDetailScreen extends StatelessWidget {
                 _buildDetailRow("WhatsApp", booking.whatsapp, Icons.message),
                 _buildDetailRow(
                   "Received On",
-                  DateFormat.yMMMd().add_jm().format(booking.createdAt),
+                  // Format date robustly
+                  DateFormat.yMMMd().add_jm().format(
+                    booking.createdAt.toLocal(),
+                  ),
                   Icons.calendar_today,
                 ),
-
                 const Divider(height: 30),
-
                 Center(
                   child: Column(
                     children: [
@@ -212,6 +276,7 @@ class BookingDetailScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 30),
+                      // Delete button within the card as well (optional)
                       OutlinedButton.icon(
                         onPressed: () => _deleteBooking(context),
                         icon: const Icon(Icons.delete),
@@ -236,13 +301,18 @@ class BookingDetailScreen extends StatelessWidget {
     );
   }
 
+  // Helper widget to build detail rows consistently
   Widget _buildDetailRow(String label, String value, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.indigo, size: 24),
+          Icon(
+            icon,
+            color: Colors.indigo[400],
+            size: 22,
+          ), // Slightly adjusted color/size
           const SizedBox(width: 15),
           Expanded(
             child: Column(
@@ -250,15 +320,15 @@ class BookingDetailScreen extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.grey,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600, // Slightly bolder label
+                    fontSize: 13, // Slightly smaller label
+                    color: Colors.grey[600],
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  value,
+                  value.isNotEmpty ? value : '-', // Show dash if value is empty
                   style: const TextStyle(fontSize: 16, color: Colors.black87),
                 ),
               ],

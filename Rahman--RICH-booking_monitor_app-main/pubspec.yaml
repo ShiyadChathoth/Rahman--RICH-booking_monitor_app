@@ -47,6 +47,7 @@ flutter_launcher_icons: # <--- ADD THIS ENTIRE BLOCK
   adaptive_icon_background: "#ffffff" # Optional: Hex color for Android adaptive icon background
   adaptive_icon_foreground: "assets/images/app_icon.png" # Optional: Use the same image or a different foreground image for adaptive icons
 
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
