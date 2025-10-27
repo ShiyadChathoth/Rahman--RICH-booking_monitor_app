@@ -1,6 +1,6 @@
-// lib/models/booking.dart - UPDATED CODE
+// lib/models/booking.dart
 
-import 'package:intl/intl.dart'; // Import intl for date parsing
+import 'package:intl/intl.dart';
 
 class Booking {
   final int id;
@@ -9,12 +9,14 @@ class Booking {
   final String designation;
   final String phone;
   final String whatsapp;
+  final String email; // <--- ADDED FIELD
   final String serviceRequired;
   final String preferredTopic;
   final String medium;
-  final DateTime createdAt; // This corresponds to 'booking_date'
-  final DateTime? programDate; // Added field (nullable)
-  final String venue; // Added field
+  final DateTime createdAt;
+  final DateTime? programDate;
+  final String venue;
+  final bool isConfirmed; // <--- ADDED STATUS FIELD
 
   Booking({
     required this.id,
@@ -23,54 +25,52 @@ class Booking {
     required this.designation,
     required this.phone,
     required this.whatsapp,
+    required this.email, // <--- ADDED TO CONSTRUCTOR
     required this.serviceRequired,
     required this.preferredTopic,
     required this.medium,
     required this.createdAt,
-    this.programDate, // Updated constructor
-    required this.venue, // Updated constructor
+    this.programDate,
+    required this.venue,
+    required this.isConfirmed, // <--- ADDED TO CONSTRUCTOR
   });
 
-  // Factory constructor to create a Booking object from JSON
   factory Booking.fromJson(Map<String, dynamic> json) {
-    // Helper function to parse dates safely
     DateTime? parseDate(String? dateString) {
       if (dateString == null || dateString.isEmpty) return null;
       try {
-        // Assuming date is in 'YYYY-MM-DD' format from the form/DB
         return DateFormat('yyyy-MM-dd').parse(dateString);
       } catch (e) {
-        print("Error parsing date '$dateString': $e");
-        // Fallback or alternative parsing if needed
         try {
-          // Try parsing as ISO 8601 if the format is different
           return DateTime.tryParse(dateString)?.toLocal();
         } catch (_) {
-          return null; // Return null if parsing fails
+          return null;
         }
       }
     }
 
+    // Safely parse integer 0/1 (from DB) to boolean. Default to false if null.
+    final int? confirmedInt = json['is_confirmed'] as int?;
+    final bool isConfirmedStatus = confirmedInt == 1;
+
     return Booking(
-      id: json['id'] as int? ?? 0, // Provide default if null
-      organization: json['organization'] as String? ?? '', // Provide default
-      contactPerson: json['contact_person'] as String? ?? '', // Provide default
-      designation: json['designation'] as String? ?? '', // Provide default
-      phone: json['phone'] as String? ?? '', // Provide default
-      whatsapp: json['whatsapp'] as String? ?? '', // Provide default
-      serviceRequired:
-          json['service_required'] as String? ?? '', // Provide default
-      preferredTopic:
-          json['preferred_topic'] as String? ?? '', // Provide default
-      medium: json['medium'] as String? ?? '', // Provide default
-      // Parse 'created_at' for booking_date
+      id: json['id'] as int? ?? 0,
+      organization: json['organization'] as String? ?? '',
+      contactPerson: json['contact_person'] as String? ?? '',
+      designation: json['designation'] as String? ?? '',
+      phone: json['phone'] as String? ?? '',
+      whatsapp: json['whatsapp'] as String? ?? '',
+      email: json['email'] as String? ?? '', // <--- PARSE FROM JSON
+      serviceRequired: json['service_required'] as String? ?? '',
+      preferredTopic: json['preferred_topic'] as String? ?? '',
+      medium: json['medium'] as String? ?? '',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'])?.toLocal() ??
                 DateTime.now().toLocal()
           : DateTime.now().toLocal(),
-      // Parse 'program_date'
-      programDate: parseDate(json['program_date'] as String?), // Updated field
-      venue: json['venue'] as String? ?? '', // Updated field
+      programDate: parseDate(json['program_date'] as String?),
+      venue: json['venue'] as String? ?? '',
+      isConfirmed: isConfirmedStatus, // <--- READ STATUS FROM JSON
     );
   }
 }
