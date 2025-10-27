@@ -122,11 +122,14 @@ Future<void> _setupFcm() async {
 
     if (message.notification != null) {
       NotificationService notificationService = NotificationService();
-      notificationService.showNotification(
-        message.hashCode,
-        message.notification?.title ?? 'Notification',
-        message.notification?.body ?? '',
-      );
+      // Ensure init is called before showing notification
+      notificationService.initNotification().then((_) {
+        notificationService.showNotification(
+          message.hashCode,
+          message.notification?.title ?? 'Notification',
+          message.notification?.body ?? '',
+        );
+      });
     }
   });
 
@@ -136,6 +139,7 @@ Future<void> _setupFcm() async {
       print(
         "App opened via terminated state notification tap: ${message.messageId}",
       );
+      // Optional: Handle navigation
     }
   });
 
@@ -144,6 +148,7 @@ Future<void> _setupFcm() async {
     print(
       'App opened via background state notification tap: ${message.messageId}',
     );
+    // Optional: Handle navigation
   });
 }
 // --- End FCM ---
@@ -226,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchBookings() async {
+    // Check if the widget is still mounted before proceeding
     if (!mounted) return;
 
     setState(() {
@@ -238,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .get(Uri.parse('$_serverUrl/bookings'))
           .timeout(const Duration(seconds: 15));
 
+      // Check mount status again after the async gap
       if (!mounted) return;
 
       if (response.statusCode == 200) {
@@ -246,6 +253,9 @@ class _HomeScreenState extends State<HomeScreen> {
           final List<Booking> fetchedBookings = (data['bookings'] as List)
               .map((json) => Booking.fromJson(json))
               .toList();
+
+          // Sort bookings by creation date, newest first
+          fetchedBookings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
           setState(() {
             _bookings = fetchedBookings;
@@ -261,16 +271,21 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       } else {
         setState(() {
-          _errorMessage = 'Server Error: ${response.statusCode}';
+          _errorMessage =
+              'Server Error: ${response.statusCode} - ${response.reasonPhrase}';
           _isLoading = false;
           _bookings = [];
         });
       }
     } catch (e) {
+      // Check mount status in catch block
       if (!mounted) return;
       print('Connection Error fetching bookings: $e');
       setState(() {
-        _errorMessage = 'Network Error: Could not connect to the server.';
+        // Differentiate timeout error
+        _errorMessage = (e is TimeoutException)
+            ? 'Network Error: Request timed out.'
+            : 'Network Error: Could not connect to the server.';
         _isLoading = false;
         _bookings = [];
       });
@@ -278,15 +293,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onBookingDeletedCallback() {
-    _fetchBookings();
+    _fetchBookings(); // Refresh list after deletion
   }
 
-  // --- NEW: _sendConfirmationEmail function for the main list view ---
+  // --- Send confirmation email function (for list view) ---
   Future<void> _sendConfirmationEmailFromList(
     BuildContext context,
     Booking booking,
   ) async {
     if (booking.isConfirmed) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Booking is already confirmed.'),
@@ -296,6 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     if (booking.email.isEmpty || booking.email == '-') {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cannot send confirmation: No valid email provided.'),
@@ -305,13 +322,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           'Sending confirmation email to ${booking.contactPerson}...',
         ),
         backgroundColor: Colors.blueGrey,
-        duration: const Duration(seconds: 1),
+        duration: const Duration(seconds: 2), // Slightly longer feedback
       ),
     );
 
@@ -328,12 +346,13 @@ class _HomeScreenState extends State<HomeScreen> {
           )
           .timeout(const Duration(seconds: 20));
 
-      if (!mounted) return;
+      if (!mounted) return; // Check after await
 
       if (response.statusCode == 200) {
-        // Refresh the list to update the status in the UI
-        await _fetchBookings();
+        // Refresh the list immediately upon success
+        await _fetchBookings(); // Await refresh
 
+        if (!mounted) return; // Check again after second await
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -362,21 +381,24 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-  // --- END NEW FUNCTION ---
+  // --- END confirmation function ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Live Booking Monitor")),
-      body: _buildBody(),
+      body: _buildBody(), // Use helper method for body content
     );
   }
 
-  // Builds the main body content based on the current state (MODIFIED)
+  // Builds the main body content based on the current state
   Widget _buildBody() {
+    // Initial loading state
     if (_isLoading && _bookings.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
+
+    // Error state display
     if (_errorMessage.isNotEmpty) {
       return Center(
         child: Padding(
@@ -384,51 +406,75 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 48),
+              const SizedBox(height: 16),
               Text(
                 _errorMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.red, fontSize: 16),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
+              ElevatedButton.icon(
+                // Added icon to retry button
                 onPressed: _fetchBookings,
-                child: const Text("Retry"),
+                icon: const Icon(Icons.refresh),
+                label: const Text("Retry"),
               ),
             ],
           ),
         ),
       );
     }
+
+    // Empty list state (after successful load)
     if (_bookings.isEmpty && !_isLoading) {
+      // Wrap with LayoutBuilder and SingleChildScrollView for scrollable refresh
       return RefreshIndicator(
         onRefresh: _fetchBookings,
-        child: const SingleChildScrollView(
-          physics: AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: 300,
-            child: Center(
-              child: Text("No bookings found yet. Pull down to refresh!"),
-            ),
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics:
+                  const AlwaysScrollableScrollPhysics(), // Enable pull-down
+              child: ConstrainedBox(
+                // Ensure Center takes full height
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      "No bookings found yet.\nPull down to refresh!",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       );
     }
 
+    // --- Display Booking List ---
     return RefreshIndicator(
-      onRefresh: _fetchBookings,
+      onRefresh: _fetchBookings, // Enable pull-to-refresh
       child: ListView.builder(
         itemCount: _bookings.length,
         itemBuilder: (context, index) {
           final booking = _bookings[index];
-          final String subtitleProgramDate = booking.programDate != null
-              ? ' | Pgm: ${DateFormat.yMd().format(booking.programDate!)}'
-              : '';
 
-          // --- Determine leading status widget ---
+          // ---- ONLY CHANGE: Format programDate in subtitle ----
+          final String subtitleProgramDate = booking.programDate != null
+              ? ' | Pgm: ${DateFormat.yMd().add_jm().format(booking.programDate!.toLocal())}' // Apply format and ensure Local Time
+              : '';
+          // ---- END CHANGE ----
+
+          // Status indicator avatar
           final Widget leadingStatus = CircleAvatar(
             backgroundColor: booking.isConfirmed
                 ? Colors.green
-                : const Color(0xffd4a017),
+                : const Color(0xffd4a017), // Gold-ish
             child: Text(
               booking.isConfirmed
                   ? '✓'
@@ -441,29 +487,32 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           );
-          // ----------------------------------------
 
-          // --- Determine trailing button widget ---
-          final Widget? trailingButton = booking.isConfirmed
-              ? null // Hide button if confirmed
+          // Trailing confirmation button (conditional)
+          final Widget? trailingButton =
+              (booking.isConfirmed ||
+                  booking.email.isEmpty ||
+                  booking.email == '-')
+              ? null // No button if confirmed or no email
               : IconButton(
                   icon: const Icon(
                     Icons.check_circle_outline,
                     color: Colors.blue,
                   ),
                   tooltip: 'Confirm Booking & Send Email',
-                  onPressed: booking.email.isNotEmpty
-                      ? () => _sendConfirmationEmailFromList(context, booking)
-                      : null,
+                  // Only enable if email is valid
+                  onPressed: () =>
+                      _sendConfirmationEmailFromList(context, booking),
                 );
-          // ----------------------------------------
 
+          // List Tile for each booking
           return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            // Using CardTheme from MaterialApp
+            // margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // Defined in CardTheme
+            // elevation: 2, // Defined in CardTheme
+            // shape: RoundedRectangleBorder( // Defined in CardTheme
+            //   borderRadius: BorderRadius.circular(8),
+            // ),
             child: ListTile(
               onTap: () {
                 Navigator.push(
@@ -473,27 +522,32 @@ class _HomeScreenState extends State<HomeScreen> {
                       booking: booking,
                       onBookingDeleted: _onBookingDeletedCallback,
                       onBookingConfirmed:
-                          _fetchBookings, // Pass callback to refresh after confirm
+                          _fetchBookings, // Pass refresh callback
                     ),
                   ),
                 );
               },
-              leading: leadingStatus, // Use the status widget
+              leading: leadingStatus,
               title: Text(
-                '${booking.organization.isNotEmpty ? booking.organization : '(No Organization)'} ${booking.isConfirmed ? ' (CONFIRMED)' : ''}',
+                '${booking.organization.isNotEmpty ? booking.organization : '(No Organization)'}${booking.isConfirmed ? ' (CONFIRMED)' : ''}',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   color: booking.isConfirmed
                       ? Colors.green.shade700
-                      : Colors.black,
+                      : Colors.black87, // Slightly softer black
                 ),
+                maxLines: 1, // Ensure title doesn't wrap excessively
+                overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
                 'Contact: ${booking.contactPerson.isNotEmpty ? booking.contactPerson : '-'}\n'
-                'Received: ${DateFormat.yMd().add_jm().format(booking.createdAt.toLocal())}$subtitleProgramDate',
+                'Received: ${DateFormat.yMd().add_jm().format(booking.createdAt.toLocal())}$subtitleProgramDate', // Use formatted program date
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                ), // Subdued subtitle color
               ),
-              isThreeLine: true,
-              trailing: trailingButton, // Use the conditional button
+              isThreeLine: true, // Allow subtitle to wrap if needed
+              trailing: trailingButton,
             ),
           );
         },

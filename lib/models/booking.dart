@@ -1,5 +1,3 @@
-// lib/models/booking.dart
-
 import 'package:intl/intl.dart';
 
 class Booking {
@@ -9,14 +7,15 @@ class Booking {
   final String designation;
   final String phone;
   final String whatsapp;
-  final String email; // <--- ADDED FIELD
+  final String email;
   final String serviceRequired;
   final String preferredTopic;
   final String medium;
-  final DateTime createdAt;
+  final DateTime
+  createdAt; // Keep the property name as createdAt for consistency in the app
   final DateTime? programDate;
   final String venue;
-  final bool isConfirmed; // <--- ADDED STATUS FIELD
+  final bool isConfirmed;
 
   Booking({
     required this.id,
@@ -25,33 +24,47 @@ class Booking {
     required this.designation,
     required this.phone,
     required this.whatsapp,
-    required this.email, // <--- ADDED TO CONSTRUCTOR
+    required this.email,
     required this.serviceRequired,
     required this.preferredTopic,
     required this.medium,
-    required this.createdAt,
+    required this.createdAt, // Property name remains createdAt
     this.programDate,
     required this.venue,
-    required this.isConfirmed, // <--- ADDED TO CONSTRUCTOR
+    required this.isConfirmed,
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(String? dateString) {
       if (dateString == null || dateString.isEmpty) return null;
+      // First try parsing as full DateTime (which program_date might be)
       try {
-        return DateFormat('yyyy-MM-dd').parse(dateString);
-      } catch (e) {
+        // Attempt to parse ISO8601 or similar formats directly
+        return DateTime.tryParse(dateString)?.toLocal();
+      } catch (_) {
+        // Fallback to Date only if DateTime parse fails (less likely needed now)
         try {
-          return DateTime.tryParse(dateString)?.toLocal();
-        } catch (_) {
+          return DateFormat('yyyy-MM-dd').parse(dateString);
+        } catch (e) {
+          print("Error parsing program_date '$dateString': $e");
           return null;
         }
       }
     }
 
-    // Safely parse integer 0/1 (from DB) to boolean. Default to false if null.
     final int? confirmedInt = json['is_confirmed'] as int?;
     final bool isConfirmedStatus = confirmedInt == 1;
+
+    // ---- MODIFICATION START ----
+    // Use 'booking_date' from JSON to populate the 'createdAt' property
+    final String? bookingDateString = json['booking_date'] as String?;
+    print("Received booking_date string: $bookingDateString"); // Debug print
+
+    final DateTime parsedCreatedAt = bookingDateString != null
+        ? DateTime.tryParse(bookingDateString)?.toLocal() ??
+              DateTime.now().toLocal()
+        : DateTime.now().toLocal();
+    // ---- MODIFICATION END ----
 
     return Booking(
       id: json['id'] as int? ?? 0,
@@ -60,17 +73,15 @@ class Booking {
       designation: json['designation'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       whatsapp: json['whatsapp'] as String? ?? '',
-      email: json['email'] as String? ?? '', // <--- PARSE FROM JSON
+      email: json['email'] as String? ?? '',
       serviceRequired: json['service_required'] as String? ?? '',
       preferredTopic: json['preferred_topic'] as String? ?? '',
       medium: json['medium'] as String? ?? '',
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'])?.toLocal() ??
-                DateTime.now().toLocal()
-          : DateTime.now().toLocal(),
+      // Assign the parsed value using the correct JSON key to the createdAt property
+      createdAt: parsedCreatedAt,
       programDate: parseDate(json['program_date'] as String?),
       venue: json['venue'] as String? ?? '',
-      isConfirmed: isConfirmedStatus, // <--- READ STATUS FROM JSON
+      isConfirmed: isConfirmedStatus,
     );
   }
 }
